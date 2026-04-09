@@ -1,6 +1,6 @@
 import { useState, useEffect } from 'react'
 import { useSearchParams, useNavigate } from 'react-router-dom'
-import { Plus, Search } from 'lucide-react'
+import { Plus, Search, Sparkles } from 'lucide-react'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { supabase } from '../../lib/supabase'
 import { useAuth } from '../../hooks/useAuth'
@@ -9,6 +9,7 @@ import Button from '../ui/Button'
 import ProjectCard from './ProjectCard'
 import StatsRow from './StatsRow'
 import ProjectModal from '../projects/ProjectModal'
+import InquiryModal from '../projects/InquiryModal'
 import type { Project } from '../../lib/types'
 
 const TYPE_FILTERS = [
@@ -35,7 +36,8 @@ export default function Dashboard() {
   const [search,     setSearch]     = useState('')
   const [typeFilter, setTypeFilter] = useState(searchParams.get('type') ?? 'all')
   const [statusFilter, setStatusFilter] = useState('all')
-  const [showAdd,    setShowAdd]    = useState(false)
+  const [showAdd,       setShowAdd]       = useState(false)
+  const [showInquiry,   setShowInquiry]   = useState(false)
 
   // Sync type filter from URL query param (sidebar links)
   useEffect(() => {
@@ -104,6 +106,9 @@ export default function Dashboard() {
                 className="pl-8 pr-3 py-1.5 text-sm border border-gray-300 rounded-lg bg-white focus:outline-none focus:ring-2 focus:ring-brand-500 w-48"
               />
             </div>
+            <Button variant="secondary" size="sm" onClick={() => setShowInquiry(true)}>
+              <Sparkles size={14} /> From Inquiry
+            </Button>
             <Button variant="primary" size="sm" onClick={() => setShowAdd(true)}>
               <Plus size={14} /> New Project
             </Button>
@@ -186,6 +191,13 @@ export default function Dashboard() {
           onSave={vals => addProject.mutate(vals)}
           onClose={() => setShowAdd(false)}
           loading={addProject.isPending}
+        />
+      )}
+
+      {showInquiry && (
+        <InquiryModal
+          onClose={() => setShowInquiry(false)}
+          onCreated={id => { setShowInquiry(false); qc.invalidateQueries({ queryKey: ['projects'] }); navigate(`/projects/${id}`) }}
         />
       )}
     </>
