@@ -273,23 +273,23 @@ export default function SourcingView({ project }: { project: Project }) {
                     </td>
                     <td className="px-3 py-3 text-gray-500">{item.target_date ? formatDate(item.target_date) : '—'}</td>
                     <td className="px-3 py-3">
-                      <div className="flex items-center gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
+                      <div className="flex items-center gap-1">
                         <button
                           onClick={() => setPriceItem(item)}
-                          className="p-1.5 rounded-lg hover:bg-blue-50 text-gray-400 hover:text-blue-600 transition-colors"
-                          title="Compare prices"
+                          className="p-1.5 rounded-lg bg-blue-50 text-blue-500 hover:bg-blue-100 hover:text-blue-700 transition-colors"
+                          title="Add / compare prices"
                         >
                           <BarChart2 size={13} />
                         </button>
                         <button
                           onClick={() => setEditItem(item)}
-                          className="p-1.5 rounded-lg hover:bg-gray-100 text-gray-400 hover:text-gray-700 transition-colors"
+                          className="p-1.5 rounded-lg hover:bg-gray-100 text-gray-400 hover:text-gray-700 transition-colors opacity-0 group-hover:opacity-100"
                         >
                           <Edit2 size={13} />
                         </button>
                         <button
                           onClick={() => { if (confirm('Remove this product from the project?')) deleteItem.mutate(item.id) }}
-                          className="p-1.5 rounded-lg hover:bg-red-50 text-gray-400 hover:text-red-500 transition-colors"
+                          className="p-1.5 rounded-lg hover:bg-red-50 text-gray-400 hover:text-red-500 transition-colors opacity-0 group-hover:opacity-100"
                         >
                           <Trash2 size={13} />
                         </button>
