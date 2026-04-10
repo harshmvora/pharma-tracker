@@ -8,13 +8,19 @@ const TYPE_ICONS: Record<string, string> = {
 }
 
 interface Props {
-  project:  Project
-  onClick:  () => void
-  onDelete: () => void
+  project:        Project
+  onClick:        () => void
+  onDelete:       () => void
+  currentUserId?: string
 }
 
-export default function ProjectCard({ project, onClick, onDelete }: Props) {
+export default function ProjectCard({ project, onClick, onDelete, currentUserId }: Props) {
   const due = dueDateLabel(project.due_date)
+
+  const isSharedWithMe =
+    !!currentUserId &&
+    project.owner_id !== currentUserId &&
+    (project.members ?? []).some(m => m.user_id === currentUserId)
 
   return (
     <div
@@ -54,10 +60,17 @@ export default function ProjectCard({ project, onClick, onDelete }: Props) {
 
       {/* Footer */}
       <div className="flex items-center justify-between mt-2">
-        <span className={`flex items-center gap-1 text-xs ${due.cls}`}>
-          <Calendar size={11} />
-          {due.label}
-        </span>
+        <div className="flex items-center gap-2">
+          <span className={`flex items-center gap-1 text-xs ${due.cls}`}>
+            <Calendar size={11} />
+            {due.label}
+          </span>
+          {isSharedWithMe && (
+            <span className="px-1.5 py-0.5 rounded text-xs font-medium bg-blue-50 text-blue-600 border border-blue-100">
+              Shared with me
+            </span>
+          )}
+        </div>
 
         {/* Members avatars */}
         <div className="flex items-center gap-1">

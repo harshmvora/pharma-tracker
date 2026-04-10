@@ -62,6 +62,17 @@ export default function Dashboard() {
     enabled: !!user,
   })
 
+  // Real-time: invalidate project list on any projects table change
+  useEffect(() => {
+    const channel = supabase
+      .channel('dashboard-projects')
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'projects' }, () => {
+        qc.invalidateQueries({ queryKey: ['projects'] })
+      })
+      .subscribe()
+    return () => { supabase.removeChannel(channel) }
+  }, [])
+
   const addProject = useMutation({
     mutationFn: async (vals: Omit<Project, 'id' | 'created_at' | 'owner_id'>) => {
       const { error } = await supabase
@@ -175,6 +186,7 @@ export default function Dashboard() {
               <ProjectCard
                 key={p.id}
                 project={p}
+                currentUserId={user?.id}
                 onClick={() => navigate(`/projects/${p.id}`)}
                 onDelete={() => {
                   if (confirm('Delete this project? This cannot be undone.'))

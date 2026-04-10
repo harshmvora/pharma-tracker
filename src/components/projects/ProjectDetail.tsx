@@ -1,4 +1,4 @@
-import { useState } from 'react'
+import { useState, useEffect } from 'react'
 import { useParams, useNavigate } from 'react-router-dom'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { ChevronLeft, Edit2, Trash2, Users, Calendar } from 'lucide-react'
@@ -46,6 +46,33 @@ export default function ProjectDetail() {
     },
     enabled: !!id,
   })
+
+  // Real-time: subscribe to changes on projects, project_members, and sourcing_items for this project
+  useEffect(() => {
+    if (!id) return
+    const channel = supabase
+      .channel(`project-detail-${id}`)
+      .on(
+        'postgres_changes',
+        { event: '*', schema: 'public', table: 'projects', filter: `id=eq.${id}` },
+        () => { qc.invalidateQueries({ queryKey: ['project', id] }) },
+      )
+      .on(
+        'postgres_changes',
+        { event: '*', schema: 'public', table: 'project_members', filter: `project_id=eq.${id}` },
+        () => { qc.invalidateQueries({ queryKey: ['project', id] }) },
+      )
+      .on(
+        'postgres_changes',
+        { event: '*', schema: 'public', table: 'sourcing_items', filter: `project_id=eq.${id}` },
+        () => {
+          qc.invalidateQueries({ queryKey: ['project', id] })
+          qc.invalidateQueries({ queryKey: ['sourcing_items', id] })
+        },
+      )
+      .subscribe()
+    return () => { supabase.removeChannel(channel) }
+  }, [])
 
   const updateProject = useMutation({
     mutationFn: async (vals: Partial<Project>) => {
