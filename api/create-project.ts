@@ -39,7 +39,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
   const body: Body = req.body
 
   try {
-    // Create project
+    // Create project — description is clean summary only
     const { data: project, error: pe } = await db
       .from('projects')
       .insert({
@@ -47,18 +47,25 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
         type:        'sourcing',
         status:      'planning',
         priority:    'medium',
-        description: [
-          body.description,
-          body.open_questions?.length
-            ? '📋 Open: ' + body.open_questions.join(' · ')
-            : '',
-        ].filter(Boolean).join('\n\n'),
-        owner_id: user.id,
+        description: body.description || null,
+        owner_id:    user.id,
       })
       .select('id')
       .single()
 
     if (pe) throw pe
+
+    // If there are open questions, create a note entry so they're visible inside the project
+    if (body.open_questions?.length) {
+      await db.from('notes').insert({
+        project_id: project.id,
+        type:       'note',
+        title:      '📋 Open questions from inquiry',
+        content:    body.open_questions.map((q: string) => `• ${q}`).join('\n'),
+        date:       new Date().toISOString().split('T')[0],
+        created_by: user.id,
+      })
+    }
 
     // Create products + sourcing items
     for (const p of body.products) {
