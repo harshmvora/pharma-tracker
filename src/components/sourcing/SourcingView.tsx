@@ -1,6 +1,6 @@
 import { useState } from 'react'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
-import { Plus, BarChart2, Trash2, Edit2 } from 'lucide-react'
+import { Plus, BarChart2, Trash2, Edit2, Sparkles } from 'lucide-react'
 import { supabase } from '../../lib/supabase'
 import { useAuth } from '../../hooks/useAuth'
 import Button from '../ui/Button'
@@ -8,6 +8,7 @@ import Badge from '../ui/Badge'
 import Modal from '../ui/Modal'
 import { Input, Select, Textarea, FormGroup, FormRow } from '../ui/Input'
 import PriceComparison from '../products/PriceComparison'
+import SourcingInquiryModal from './SourcingInquiryModal'
 import { formatDate } from '../../lib/utils'
 import type { Project, SourcingItem, Product, SourcingStatus } from '../../lib/types'
 
@@ -117,9 +118,10 @@ const STATUS_COLORS: Record<string, string> = {
 export default function SourcingView({ project }: { project: Project }) {
   const { user } = useAuth()
   const qc = useQueryClient()
-  const [showAdd,  setShowAdd]  = useState(false)
-  const [editItem, setEditItem] = useState<(SourcingItem & { product?: Product }) | null>(null)
-  const [priceItem, setPriceItem] = useState<(SourcingItem & { product?: Product }) | null>(null)
+  const [showAdd,      setShowAdd]      = useState(false)
+  const [showInquiry,  setShowInquiry]  = useState(false)
+  const [editItem,     setEditItem]     = useState<(SourcingItem & { product?: Product }) | null>(null)
+  const [priceItem,    setPriceItem]    = useState<(SourcingItem & { product?: Product }) | null>(null)
 
   const { data: items = [], isLoading } = useQuery({
     queryKey: ['sourcing_items', project.id],
@@ -213,9 +215,14 @@ export default function SourcingView({ project }: { project: Project }) {
               </p>
             )}
           </div>
-          <Button variant="primary" size="sm" onClick={() => setShowAdd(true)}>
-            <Plus size={13} /> Add Product
-          </Button>
+          <div className="flex gap-2">
+            <Button variant="secondary" size="sm" onClick={() => setShowInquiry(true)}>
+              <Sparkles size={13} /> From Inquiry
+            </Button>
+            <Button variant="primary" size="sm" onClick={() => setShowAdd(true)}>
+              <Plus size={13} /> Add Product
+            </Button>
+          </div>
         </div>
 
         {/* Table */}
@@ -296,6 +303,13 @@ export default function SourcingView({ project }: { project: Project }) {
         )}
       </div>
 
+      {showInquiry && (
+        <SourcingInquiryModal
+          project={project}
+          onClose={() => setShowInquiry(false)}
+          onAdded={() => { qc.invalidateQueries({ queryKey: ['sourcing_items', project.id] }); setShowInquiry(false) }}
+        />
+      )}
       {showAdd  && <ItemModal onSave={v => addItem.mutate(v)}                          onClose={() => setShowAdd(false)}  loading={addItem.isPending}    />}
       {editItem && <ItemModal item={editItem} onSave={v => updateItem.mutate({ id: editItem.id, vals: v })} onClose={() => setEditItem(null)}  loading={updateItem.isPending} />}
       {priceItem?.product && (
