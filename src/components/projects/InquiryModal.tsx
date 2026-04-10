@@ -81,67 +81,21 @@ export default function InquiryModal({ onClose, onCreated }: Props) {
     if (!parsed || !user) return
     setStep('saving')
     try {
-      // 1. Create project
-      const { data: project, error: pe } = await supabase
-        .from('projects')
-        .insert({
-          name: parsed.project_name,
-          type: 'sourcing',
-          status: 'planning',
-          priority: 'medium',
-          description: [parsed.description, parsed.open_questions.length ? '📋 Open: ' + parsed.open_questions.join(' · ') : ''].filter(Boolean).join('\n\n'),
-          owner_id: user.id,
-        })
-        .select('id')
-        .single()
-      if (pe) throw pe
+      // Get the current session JWT to send to the server
+      const { data: { session } } = await supabase.auth.getSession()
+      if (!session) throw new Error('Not authenticated')
 
-      // 2. Create products + sourcing items
-      for (const p of parsed.products) {
-        if (!p.generic_name.trim()) continue
-
-        // Upsert product (match on name + strength + form)
-        const { data: existing } = await supabase
-          .from('products')
-          .select('id')
-          .ilike('generic_name', p.generic_name.trim())
-          .eq('strength', p.strength || '')
-          .maybeSingle()
-
-        let productId: string
-        if (existing) {
-          productId = existing.id
-        } else {
-          const { data: newProd, error: prodErr } = await supabase
-            .from('products')
-            .insert({
-              generic_name: p.generic_name.trim(),
-              strength: p.strength || null,
-              dosage_form: p.dosage_form || null,
-              packing: p.packing || null,
-              created_by: user.id,
-            })
-            .select('id')
-            .single()
-          if (prodErr) throw prodErr
-          productId = newProd.id
-        }
-
-        // Create sourcing item
-        const noteParts = [
-          p.quantity ? `Qty: ${p.quantity}` : '',
-          p.notes || '',
-        ].filter(Boolean).join(' · ')
-
-        await supabase.from('sourcing_items').insert({
-          project_id: project.id,
-          product_id: productId,
-          status: 'pending',
-          notes: noteParts || null,
-        })
-      }
-
-      onCreated(project.id)
+      const res = await fetch('/api/create-project', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${session.access_token}`,
+        },
+        body: JSON.stringify(parsed),
+      })
+      if (!res.ok) throw new Error((await res.json()).error ?? 'Failed to create project')
+      const { id } = await res.json()
+      onCreated(id)
     } catch (e: any) {
       setError(e.message)
       setStep('preview')
