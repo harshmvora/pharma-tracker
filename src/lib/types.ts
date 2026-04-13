@@ -128,6 +128,20 @@ export interface SourcingItem {
   quotes?:     PriceQuote[]
 }
 
+// ── Dev Products ──────────────────────────────────────────────
+export type DevProductStatus = 'formulation' | 'stability' | 'regulatory' | 'scale-up' | 'launched' | 'on-hold'
+
+export interface DevProduct {
+  id:         string
+  project_id: string
+  name:       string
+  status:     DevProductStatus
+  notes:      string | null
+  updated_at: string
+  created_by: string | null
+  created_at: string
+}
+
 // ── Development ───────────────────────────────────────────────
 export interface DevPhase {
   id:          string

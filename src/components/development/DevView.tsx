@@ -1,13 +1,13 @@
 import { useState } from 'react'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
-import { Plus, ChevronDown, ChevronRight, Edit2, Trash2, UserPlus } from 'lucide-react'
+import { Plus, ChevronDown, ChevronRight, Edit2, Trash2, Zap } from 'lucide-react'
 import { supabase } from '../../lib/supabase'
 import { useAuth } from '../../hooks/useAuth'
 import Button from '../ui/Button'
 import Modal from '../ui/Modal'
 import { Input, Select, Textarea, FormGroup, FormRow } from '../ui/Input'
 import { formatDate, dueDateLabel, initials } from '../../lib/utils'
-import type { Project, DevPhase, Task, Priority, PhaseStatus, Profile } from '../../lib/types'
+import type { Project, DevPhase, Task, Priority, PhaseStatus, Profile, DevProduct, DevProductStatus } from '../../lib/types'
 
 // ── Phase form ────────────────────────────────────────────────
 interface PhaseForm { name: string; status: PhaseStatus; start_date: string; end_date: string; description: string }
@@ -103,6 +103,214 @@ function TaskModal({ task, members, onSave, onClose, loading }: {
         </FormGroup>
       </div>
     </Modal>
+  )
+}
+
+// ── Dev product form ──────────────────────────────────────────
+const DEV_PRODUCT_STATUSES: DevProductStatus[] = ['formulation', 'stability', 'regulatory', 'scale-up', 'launched', 'on-hold']
+
+interface DevProductForm { name: string; status: DevProductStatus; notes: string }
+const BLANK_PROD: DevProductForm = { name: '', status: 'formulation', notes: '' }
+
+const PROD_STATUS_CLS: Record<DevProductStatus, string> = {
+  formulation: 'bg-purple-100 text-purple-700',
+  stability:   'bg-blue-100 text-blue-700',
+  regulatory:  'bg-amber-100 text-amber-700',
+  'scale-up':  'bg-orange-100 text-orange-700',
+  launched:    'bg-green-100 text-green-700',
+  'on-hold':   'bg-gray-100 text-gray-500',
+}
+
+function DevProductModal({ product, onSave, onClose, loading }: {
+  product?: DevProduct; onSave: (v: DevProductForm) => void; onClose: () => void; loading?: boolean
+}) {
+  const [form, setForm] = useState<DevProductForm>(product ? {
+    name: product.name, status: product.status, notes: product.notes ?? '',
+  } : BLANK_PROD)
+  const set = <K extends keyof DevProductForm>(k: K, v: DevProductForm[K]) => setForm(f => ({ ...f, [k]: v }))
+  return (
+    <Modal title={product ? 'Edit Product' : 'Add Product'} onClose={onClose} size="sm" footer={
+      <><Button variant="secondary" onClick={onClose}>Cancel</Button>
+        <Button variant="primary" onClick={() => { if (!form.name.trim()) return alert('Product name required'); onSave(form) }} loading={loading}>
+          {product ? 'Save' : 'Add Product'}
+        </Button></>
+    }>
+      <div className="space-y-4">
+        <FormGroup label="Product name" required>
+          <Input value={form.name} onChange={e => set('name', e.target.value)} placeholder="e.g. Dipiclaav Tablet" autoFocus />
+        </FormGroup>
+        <FormGroup label="Status">
+          <Select value={form.status} onChange={e => set('status', e.target.value as DevProductStatus)}>
+            {DEV_PRODUCT_STATUSES.map(s => (
+              <option key={s} value={s}>{s.charAt(0).toUpperCase() + s.slice(1).replace('-', ' ')}</option>
+            ))}
+          </Select>
+        </FormGroup>
+        <FormGroup label="Notes">
+          <Textarea value={form.notes} onChange={e => set('notes', e.target.value)} placeholder="Any notes about this product…" rows={2} />
+        </FormGroup>
+      </div>
+    </Modal>
+  )
+}
+
+function isRecentlyUpdated(product: DevProduct): boolean {
+  const updated = new Date(product.updated_at).getTime()
+  const created = new Date(product.created_at).getTime()
+  const now = Date.now()
+  // Only flag if updated after initial creation (not just created) and within 48h
+  return (updated - created > 5000) && (now - updated < 48 * 60 * 60 * 1000)
+}
+
+function DevProductsSection({ project }: { project: Project }) {
+  const { user } = useAuth()
+  const qc = useQueryClient()
+  const [showAdd,  setShowAdd]  = useState(false)
+  const [editProd, setEditProd] = useState<DevProduct | null>(null)
+
+  const { data: products = [], isLoading } = useQuery({
+    queryKey: ['dev_products', project.id],
+    queryFn: async () => {
+      const { data, error } = await supabase
+        .from('dev_products')
+        .select('*')
+        .eq('project_id', project.id)
+        .order('created_at')
+      if (error) throw error
+      return (data ?? []) as DevProduct[]
+    },
+  })
+
+  const addProduct = useMutation({
+    mutationFn: async (v: DevProductForm) => {
+      const { error } = await supabase.from('dev_products').insert({
+        project_id: project.id,
+        name:       v.name.trim(),
+        status:     v.status,
+        notes:      v.notes.trim() || null,
+        created_by: user!.id,
+      })
+      if (error) throw error
+    },
+    onSuccess: () => { qc.invalidateQueries({ queryKey: ['dev_products', project.id] }); setShowAdd(false) },
+  })
+
+  const updateProduct = useMutation({
+    mutationFn: async ({ id, v }: { id: string; v: DevProductForm }) => {
+      const { error } = await supabase.from('dev_products').update({
+        name:  v.name.trim(),
+        status: v.status,
+        notes: v.notes.trim() || null,
+      }).eq('id', id)
+      if (error) throw error
+    },
+    onSuccess: () => { qc.invalidateQueries({ queryKey: ['dev_products', project.id] }); setEditProd(null) },
+  })
+
+  const updateStatus = async (id: string, status: DevProductStatus) => {
+    await supabase.from('dev_products').update({ status }).eq('id', id)
+    qc.invalidateQueries({ queryKey: ['dev_products', project.id] })
+  }
+
+  const deleteProduct = useMutation({
+    mutationFn: async (id: string) => {
+      await supabase.from('dev_products').delete().eq('id', id)
+    },
+    onSuccess: () => qc.invalidateQueries({ queryKey: ['dev_products', project.id] }),
+  })
+
+  const recentCount = products.filter(isRecentlyUpdated).length
+
+  return (
+    <>
+      <div className="bg-white rounded-xl border border-gray-200">
+        <div className="flex items-center justify-between px-5 py-4 border-b border-gray-100">
+          <div>
+            <h3 className="font-semibold text-gray-900">🧪 Products in Development ({products.length})</h3>
+            {recentCount > 0 && (
+              <p className="text-xs text-amber-600 mt-0.5 flex items-center gap-1">
+                <Zap size={11} /> {recentCount} updated recently
+              </p>
+            )}
+          </div>
+          <Button variant="primary" size="sm" onClick={() => setShowAdd(true)}>
+            <Plus size={13} /> Add Product
+          </Button>
+        </div>
+
+        {isLoading ? (
+          <div className="p-6 text-center text-gray-400 text-sm">Loading…</div>
+        ) : products.length === 0 ? (
+          <div className="p-8 text-center">
+            <p className="text-3xl mb-2">🧪</p>
+            <p className="font-medium text-gray-600">No products yet</p>
+            <p className="text-sm text-gray-400 mt-1">Add the products being developed in this project</p>
+          </div>
+        ) : (
+          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3 p-4">
+            {products.map(prod => {
+              const recent = isRecentlyUpdated(prod)
+              return (
+                <div
+                  key={prod.id}
+                  className={`relative rounded-lg border p-4 group transition-colors ${
+                    recent
+                      ? 'border-amber-200 bg-amber-50/50'
+                      : 'border-gray-100 bg-gray-50/40 hover:border-gray-200'
+                  }`}
+                >
+                  {recent && (
+                    <span className="absolute top-3 right-3 flex h-2 w-2">
+                      <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-amber-400 opacity-75" />
+                      <span className="relative inline-flex rounded-full h-2 w-2 bg-amber-500" />
+                    </span>
+                  )}
+
+                  <p className="font-semibold text-gray-900 text-sm pr-4 mb-2">{prod.name}</p>
+
+                  <select
+                    value={prod.status}
+                    onChange={e => updateStatus(prod.id, e.target.value as DevProductStatus)}
+                    className={`text-xs font-medium px-2.5 py-1 rounded-full border-none outline-none cursor-pointer mb-2 ${PROD_STATUS_CLS[prod.status]}`}
+                  >
+                    {DEV_PRODUCT_STATUSES.map(s => (
+                      <option key={s} value={s}>{s.charAt(0).toUpperCase() + s.slice(1).replace('-', ' ')}</option>
+                    ))}
+                  </select>
+
+                  {prod.notes && (
+                    <p className="text-xs text-gray-500 mt-1 line-clamp-2">{prod.notes}</p>
+                  )}
+
+                  <div className="flex items-center justify-between mt-3">
+                    <span className="text-xs text-gray-400">
+                      {recent ? '⚡ Updated recently' : `Updated ${formatDate(prod.updated_at)}`}
+                    </span>
+                    <div className="flex gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
+                      <button
+                        onClick={() => setEditProd(prod)}
+                        className="p-1 rounded hover:bg-white text-gray-400 hover:text-gray-700"
+                      >
+                        <Edit2 size={11} />
+                      </button>
+                      <button
+                        onClick={() => { if (confirm('Remove this product?')) deleteProduct.mutate(prod.id) }}
+                        className="p-1 rounded hover:bg-red-50 text-gray-400 hover:text-red-500"
+                      >
+                        <Trash2 size={11} />
+                      </button>
+                    </div>
+                  </div>
+                </div>
+              )
+            })}
+          </div>
+        )}
+      </div>
+
+      {showAdd   && <DevProductModal onSave={v => addProduct.mutate(v)} onClose={() => setShowAdd(false)} loading={addProduct.isPending} />}
+      {editProd  && <DevProductModal product={editProd} onSave={v => updateProduct.mutate({ id: editProd.id, v })} onClose={() => setEditProd(null)} loading={updateProduct.isPending} />}
+    </>
   )
 }
 
@@ -221,6 +429,8 @@ export default function DevView({ project }: { project: Project }) {
 
   return (
     <>
+      <DevProductsSection project={project} />
+
       <div className="bg-white rounded-xl border border-gray-200">
         <div className="flex items-center justify-between px-5 py-4 border-b border-gray-100">
           <div>
