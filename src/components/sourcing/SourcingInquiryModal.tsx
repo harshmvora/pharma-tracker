@@ -1,5 +1,5 @@
 import { useState } from 'react'
-import { Sparkles, Plus, Trash2, Loader2 } from 'lucide-react'
+import { Sparkles, Plus, Trash2, Loader2, Package, FlaskConical } from 'lucide-react'
 import { supabase } from '../../lib/supabase'
 import { useAuth } from '../../hooks/useAuth'
 import Modal from '../ui/Modal'
@@ -19,16 +19,16 @@ interface ParsedProduct {
 interface Props {
   project:   Project
   onClose:   () => void
-  onAdded:   () => void   // refresh parent list
+  onAdded:   () => void
 }
 
 export default function SourcingInquiryModal({ project, onClose, onAdded }: Props) {
   const { user } = useAuth()
-  const [step,    setStep]    = useState<'paste' | 'preview' | 'saving'>('paste')
-  const [text,    setText]    = useState('')
-  const [parsing, setParsing] = useState(false)
+  const [step,     setStep]     = useState<'paste' | 'preview' | 'choose' | 'saving'>('paste')
+  const [text,     setText]     = useState('')
+  const [parsing,  setParsing]  = useState(false)
   const [products, setProducts] = useState<ParsedProduct[]>([])
-  const [error,   setError]   = useState('')
+  const [error,    setError]    = useState('')
 
   const parse = async () => {
     if (!text.trim()) return
@@ -57,14 +57,13 @@ export default function SourcingInquiryModal({ project, onClose, onAdded }: Prop
     setProducts(next)
   }
 
-  const addProducts = async () => {
+  const addToSourcing = async () => {
     if (!user) return
     setStep('saving')
     try {
       for (const p of products) {
         if (!p.generic_name.trim()) continue
 
-        // Upsert into global products catalogue
         const { data: prod, error: pErr } = await supabase
           .from('products')
           .upsert({
@@ -78,10 +77,7 @@ export default function SourcingInquiryModal({ project, onClose, onAdded }: Prop
           .single()
         if (pErr || !prod) throw pErr ?? new Error('Failed to save product')
 
-        const noteParts = [
-          p.quantity ? `Qty: ${p.quantity}` : '',
-          p.notes    || '',
-        ].filter(Boolean).join(' · ')
+        const noteParts = [p.quantity ? `Qty: ${p.quantity}` : '', p.notes || ''].filter(Boolean).join(' · ')
 
         const { error: siErr } = await supabase.from('sourcing_items').insert({
           project_id: project.id,
@@ -95,7 +91,39 @@ export default function SourcingInquiryModal({ project, onClose, onAdded }: Prop
       onClose()
     } catch (e: any) {
       setError(e.message)
-      setStep('preview')
+      setStep('choose')
+    }
+  }
+
+  const addToDevelopment = async () => {
+    if (!user) return
+    setStep('saving')
+    try {
+      for (const p of products) {
+        if (!p.generic_name.trim()) continue
+
+        const name = [p.generic_name.trim(), p.strength].filter(Boolean).join(' ')
+        const noteParts = [
+          p.dosage_form ? `Form: ${p.dosage_form}` : '',
+          p.packing     ? `Pack: ${p.packing}`     : '',
+          p.quantity    ? `Qty: ${p.quantity}`      : '',
+          p.notes       || '',
+        ].filter(Boolean).join(' · ')
+
+        const { error: dpErr } = await supabase.from('dev_products').insert({
+          project_id: project.id,
+          name,
+          status:     'formulation',
+          notes:      noteParts || null,
+          created_by: user.id,
+        })
+        if (dpErr) throw dpErr
+      }
+      onAdded()
+      onClose()
+    } catch (e: any) {
+      setError(e.message)
+      setStep('choose')
     }
   }
 
@@ -122,13 +150,18 @@ export default function SourcingInquiryModal({ project, onClose, onAdded }: Prop
         ) : step === 'preview' ? (
           <>
             <Button variant="secondary" onClick={() => setStep('paste')}>← Back</Button>
-            <Button variant="primary" onClick={addProducts} disabled={validCount === 0}>
-              Add {validCount} product{validCount !== 1 ? 's' : ''} to project
+            <Button variant="primary" onClick={() => setStep('choose')} disabled={validCount === 0}>
+              Continue →
             </Button>
+          </>
+        ) : step === 'choose' ? (
+          <>
+            <Button variant="secondary" onClick={() => setStep('preview')}>← Back</Button>
           </>
         ) : null
       }
     >
+      {/* ── Step 1: Paste ── */}
       {step === 'paste' && (
         <div className="space-y-4">
           <p className="text-sm text-gray-500">
@@ -146,11 +179,12 @@ export default function SourcingInquiryModal({ project, onClose, onAdded }: Prop
         </div>
       )}
 
+      {/* ── Step 2: Preview & Edit products ── */}
       {step === 'preview' && (
         <div className="space-y-4">
           <div className="flex items-center justify-between">
             <p className="text-sm font-semibold text-gray-700">
-              {validCount} product{validCount !== 1 ? 's' : ''} will be added to <span className="text-brand-600">{project.name}</span>
+              {validCount} product{validCount !== 1 ? 's' : ''} found in <span className="text-brand-600">{project.name}</span>
             </p>
             <button
               onClick={() => setProducts(p => [...p, { generic_name: '', strength: '', dosage_form: 'tablet', packing: '', quantity: '', notes: '' }])}
@@ -198,6 +232,44 @@ export default function SourcingInquiryModal({ project, onClose, onAdded }: Prop
         </div>
       )}
 
+      {/* ── Step 3: Choose destination ── */}
+      {step === 'choose' && (
+        <div className="py-4 space-y-4">
+          <p className="text-sm text-gray-500 text-center">
+            Where should these <span className="font-semibold text-gray-700">{validCount} product{validCount !== 1 ? 's' : ''}</span> go?
+          </p>
+          <div className="grid grid-cols-2 gap-4">
+            <button
+              onClick={addToSourcing}
+              className="flex flex-col items-center gap-3 p-6 rounded-xl border-2 border-gray-200 hover:border-brand-400 hover:bg-brand-50 transition-all group"
+            >
+              <span className="w-12 h-12 rounded-full bg-blue-100 flex items-center justify-center group-hover:bg-brand-100 transition-colors">
+                <Package size={22} className="text-blue-600 group-hover:text-brand-600" />
+              </span>
+              <div className="text-center">
+                <p className="font-semibold text-gray-900">Sourcing</p>
+                <p className="text-xs text-gray-500 mt-0.5">Find manufacturers &amp; compare prices</p>
+              </div>
+            </button>
+
+            <button
+              onClick={addToDevelopment}
+              className="flex flex-col items-center gap-3 p-6 rounded-xl border-2 border-gray-200 hover:border-purple-400 hover:bg-purple-50 transition-all group"
+            >
+              <span className="w-12 h-12 rounded-full bg-purple-100 flex items-center justify-center group-hover:bg-purple-200 transition-colors">
+                <FlaskConical size={22} className="text-purple-600" />
+              </span>
+              <div className="text-center">
+                <p className="font-semibold text-gray-900">Development</p>
+                <p className="text-xs text-gray-500 mt-0.5">Track formulation &amp; regulatory progress</p>
+              </div>
+            </button>
+          </div>
+          {error && <p className="text-sm text-red-500 text-center">{error}</p>}
+        </div>
+      )}
+
+      {/* ── Saving ── */}
       {step === 'saving' && (
         <div className="flex flex-col items-center justify-center py-16 gap-3 text-gray-500">
           <Loader2 size={28} className="animate-spin text-brand-600" />
